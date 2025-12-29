@@ -48,13 +48,27 @@ def _l10n_it_edi_doi_extension_post_init(env):
     for company in env["res.company"].search(
         [("chart_template", "=", "it"), ("parent_id", "=", False)]
     ):
-        chart_template = env["account.chart.template"].with_company(company)
-        # Load purchase DOI tax and company configuration
-        chart_template._load_data(
-            {
-                "account.tax": chart_template._get_it_edi_doi_extension_account_tax(),
-                "res.company": chart_template._get_it_edi_doi_extension_res_company(),
-            }
+        # Check if tax already exists for this company
+        existing_tax = env["account.tax"].search(
+            [
+                ("company_id", "=", company.id),
+                ("name", "=", "0% E Acq"),
+                ("type_tax_use", "=", "purchase"),
+            ],
+            limit=1,
         )
+        if existing_tax:
+            # Tax already exists, just update company configuration if needed
+            if not company.l10n_it_edi_doi_bill_tax_id:
+                company.l10n_it_edi_doi_bill_tax_id = existing_tax
+        else:
+            # Create tax using chart template
+            chart_template = env["account.chart.template"].with_company(company)
+            chart_template._load_data(
+                {
+                    "account.tax": chart_template._get_it_edi_doi_extension_account_tax(),
+                    "res.company": chart_template._get_it_edi_doi_extension_res_company(),
+                }
+            )
         # Add fiscal position mappings for purchase taxes
         _add_fiscal_position_mappings(env, company)
