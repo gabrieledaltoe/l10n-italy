@@ -174,3 +174,232 @@ class TestDoiExtensionPostInit(TransactionCase):
                         len(purchase_mappings) > 0,
                         "Fiscal position should have purchase tax mappings",
                     )
+
+
+@tagged("post_install", "-at_install")
+class TestDoiMultiSupplier(TransactionCase):
+    """Test DOI 'in' (issued) multi-supplier functionality."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.company = cls.env.ref("base.main_company")
+        cls.company.country_id = cls.env.ref("base.it")
+        cls.company.account_fiscal_country_id = cls.env.ref("base.it")
+
+        # Create tax for DOI
+        cls.tax_group = cls.env["account.tax.group"].create(
+            {"name": "Vat Free Multi", "sequence": 1}
+        )
+        cls.tax = cls.env["account.tax"].create(
+            {
+                "l10n_it_exempt_reason": "N3.5",
+                "l10n_it_law_reference": "Art. 8, comma 1, lett. a) DPR 633/72",
+                "type_tax_use": "purchase",
+                "name": "0% DOI Multi Supplier",
+                "amount": 0,
+                "tax_group_id": cls.tax_group.id,
+            }
+        )
+        cls.env.company.l10n_it_edi_doi_bill_tax_id = cls.tax
+
+        # Create two different suppliers
+        cls.supplier_a = cls.env["res.partner"].create(
+            {
+                "name": "Supplier A",
+                "country_id": cls.env.ref("base.it").id,
+                "company_id": cls.company.id,
+            }
+        )
+        cls.supplier_b = cls.env["res.partner"].create(
+            {
+                "name": "Supplier B",
+                "country_id": cls.env.ref("base.it").id,
+                "company_id": cls.company.id,
+            }
+        )
+
+    def test_doi_in_without_partner(self):
+        """Test that DOI 'in' can be created without partner."""
+        doi = self.env["l10n_it_edi_doi.declaration_of_intent"].create(
+            {
+                "company_id": self.company.id,
+                "state": "active",
+                "type": "in",
+                "currency_id": self.company.currency_id.id,
+                "issue_date": fields.Date.today(),
+                "start_date": fields.Date.today(),
+                "end_date": fields.Date.today() + relativedelta(months=2),
+                "threshold": 10000,
+                "protocol_number_part1": "MS001",
+                "protocol_number_part2": "001",
+                # No partner_id - should be allowed for type='in'
+            }
+        )
+        self.assertTrue(doi.id)
+        self.assertEqual(doi.type, "in")
+        self.assertFalse(doi.partner_id)
+
+    def test_doi_out_requires_partner(self):
+        """Test that DOI 'out' still requires partner."""
+        from odoo.exceptions import ValidationError
+
+        with self.assertRaises(ValidationError):
+            self.env["l10n_it_edi_doi.declaration_of_intent"].create(
+                {
+                    "company_id": self.company.id,
+                    "state": "active",
+                    "type": "out",  # Received - requires partner
+                    "currency_id": self.company.currency_id.id,
+                    "issue_date": fields.Date.today(),
+                    "start_date": fields.Date.today(),
+                    "end_date": fields.Date.today() + relativedelta(months=2),
+                    "threshold": 10000,
+                    "protocol_number_part1": "MS002",
+                    "protocol_number_part2": "002",
+                    # No partner_id - should raise ValidationError
+                }
+            )
+
+    def test_doi_in_multi_supplier_plafond(self):
+        """Test that DOI 'in' plafond is correctly calculated with multiple suppliers."""
+        # Create DOI without partner (valid for all suppliers)
+        doi = self.env["l10n_it_edi_doi.declaration_of_intent"].create(
+            {
+                "company_id": self.company.id,
+                "state": "active",
+                "type": "in",
+                "currency_id": self.company.currency_id.id,
+                "issue_date": fields.Date.today(),
+                "start_date": fields.Date.today(),
+                "end_date": fields.Date.today() + relativedelta(months=2),
+                "threshold": 5000,
+                "protocol_number_part1": "MS003",
+                "protocol_number_part2": "003",
+            }
+        )
+
+        # Create invoice from Supplier A
+        invoice_a = self._create_invoice(self.supplier_a, doi, 1000)
+        invoice_a.action_post()
+
+        # Check plafond after first invoice
+        self.assertEqual(doi.invoiced, 1000)
+        self.assertEqual(doi.remaining, 4000)
+
+        # Create invoice from Supplier B (different supplier, same DOI)
+        invoice_b = self._create_invoice(self.supplier_b, doi, 1500)
+        invoice_b.action_post()
+
+        # Check plafond after second invoice from different supplier
+        self.assertEqual(doi.invoiced, 2500)
+        self.assertEqual(doi.remaining, 2500)
+
+    def test_doi_in_fetch_without_partner_filter(self):
+        """Test that _fetch_valid_declaration_of_intent finds DOI 'in' without partner filter.
+
+        The key test is that BOTH suppliers find the SAME DOI, proving that
+        the partner filter is not applied for DOI type 'in'.
+        """
+        # Create DOI without partner
+        doi = self.env["l10n_it_edi_doi.declaration_of_intent"].create(
+            {
+                "company_id": self.company.id,
+                "state": "active",
+                "type": "in",
+                "currency_id": self.company.currency_id.id,
+                "issue_date": fields.Date.today(),
+                "start_date": fields.Date.today(),
+                "end_date": fields.Date.today() + relativedelta(months=2),
+                "threshold": 10000,
+                "protocol_number_part1": "MS004",
+                "protocol_number_part2": "004",
+            }
+        )
+
+        # Fetch valid DOI for Supplier A
+        found_doi_a = self.env[
+            "l10n_it_edi_doi.declaration_of_intent"
+        ]._fetch_valid_declaration_of_intent(
+            self.company,
+            self.supplier_a,
+            self.company.currency_id,
+            fields.Date.today(),
+            doi_type="in",
+        )
+
+        # Fetch valid DOI for Supplier B
+        found_doi_b = self.env[
+            "l10n_it_edi_doi.declaration_of_intent"
+        ]._fetch_valid_declaration_of_intent(
+            self.company,
+            self.supplier_b,
+            self.company.currency_id,
+            fields.Date.today(),
+            doi_type="in",
+        )
+
+        # Both suppliers should find the SAME DOI (no partner filter for type 'in')
+        self.assertEqual(
+            found_doi_a, found_doi_b,
+            "Both suppliers should find the same DOI 'in' (no partner filter)"
+        )
+        # The found DOI should be of type 'in'
+        self.assertEqual(found_doi_a.type, "in")
+        # The found DOI should be active and valid
+        self.assertEqual(found_doi_a.state, "active")
+        self.assertGreater(found_doi_a.remaining, 0)
+
+    def test_doi_in_validity_no_partner_error(self):
+        """Test that DOI 'in' validation doesn't fail for different partners."""
+        # Create DOI without partner
+        doi = self.env["l10n_it_edi_doi.declaration_of_intent"].create(
+            {
+                "company_id": self.company.id,
+                "state": "active",
+                "type": "in",
+                "currency_id": self.company.currency_id.id,
+                "issue_date": fields.Date.today(),
+                "start_date": fields.Date.today(),
+                "end_date": fields.Date.today() + relativedelta(months=2),
+                "threshold": 10000,
+                "protocol_number_part1": "MS005",
+                "protocol_number_part2": "005",
+            }
+        )
+
+        # Validate for Supplier A - should not return partner error
+        errors_a = doi._get_validity_errors(
+            self.company, self.supplier_a, self.company.currency_id
+        )
+        self.assertEqual(len(errors_a), 0)
+
+        # Validate for Supplier B - should also not return partner error
+        errors_b = doi._get_validity_errors(
+            self.company, self.supplier_b, self.company.currency_id
+        )
+        self.assertEqual(len(errors_b), 0)
+
+    def _create_invoice(self, partner, doi, amount):
+        """Helper to create invoice with specific amount."""
+        invoice = self.env["account.move"].create(
+            {
+                "move_type": "in_invoice",
+                "partner_id": partner.id,
+                "invoice_date": fields.Date.today(),
+                "l10n_it_edi_doi_id": doi.id,
+                "invoice_line_ids": [
+                    (
+                        0,
+                        0,
+                        {
+                            "name": "Test Product",
+                            "quantity": 1,
+                            "price_unit": amount,
+                            "tax_ids": [(6, 0, [self.tax.id])],
+                        },
+                    )
+                ],
+            }
+        )
+        return invoice

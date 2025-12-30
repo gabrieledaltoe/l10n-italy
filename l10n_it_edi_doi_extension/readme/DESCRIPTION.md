@@ -10,6 +10,8 @@ Key features:
 - Automatic fiscal position mappings for Italian purchase taxes
 - Threshold warnings on purchase invoices (similar to sales invoices)
 - Support for "in" type declarations (issued from company to suppliers)
+- **Multi-supplier support**: a single "in" type DOI can be used with any
+  supplier, with the plafond shared across all purchases
 
 **Italiano**
 
@@ -23,3 +25,5 @@ Funzionalità principali:
 - Mappature automatiche della posizione fiscale per le aliquote IVA italiane in acquisto
 - Avvisi sulla soglia nelle fatture di acquisto (come per le fatture di vendita)
 - Supporto per le dichiarazioni di tipo "in" (emesse dall'azienda ai fornitori)
+- **Supporto multi-fornitore**: una singola DOI di tipo "in" può essere
+  utilizzata con qualsiasi fornitore, con il plafond condiviso su tutti gli acquisti

@@ -86,3 +86,6 @@ docs/_build/
 
 # OCA rules
 !static/lib/
+l10n_it_edi_doi_extension/CHANGELOG.md
+l10n_it_edi_doi_extension/DOI_CATEGORY_ANALYSIS.md
+l10n_it_edi_doi_extension/DOI_IN_MULTI_SUPPLIER_ANALYSIS.md

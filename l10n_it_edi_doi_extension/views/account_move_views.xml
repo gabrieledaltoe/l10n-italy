@@ -1,5 +1,42 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <odoo>
+    <!-- List view for purchase invoices linked to DOI type 'in' (issued from company) -->
+    <record id="view_move_tree_purchase_doi" model="ir.ui.view">
+        <field name="name">account.move.list.purchase.doi</field>
+        <field name="model">account.move</field>
+        <field name="arch" type="xml">
+            <list
+                string="Purchase Invoices"
+                sample="1"
+                decoration-info="state == 'draft'"
+                expand="context.get('expand', False)"
+            >
+                <field name="made_sequence_gap" column_invisible="True" />
+                <field
+                    name="name"
+                    decoration-bf="1"
+                    decoration-danger="made_sequence_gap"
+                />
+                <field name="invoice_partner_display_name" string="Supplier" />
+                <field name="invoice_date" string="Invoice Date" />
+                <field name="date" string="Accounting Date" optional="hidden" />
+                <field name="currency_id" column_invisible="True" />
+                <field
+                    name="state"
+                    widget="badge"
+                    decoration-info="state == 'draft'"
+                    decoration-success="state == 'posted'"
+                />
+                <field
+                    name="l10n_it_edi_doi_amount"
+                    decoration-bf="1"
+                    sum="Total"
+                    string="Tax excluded"
+                />
+            </list>
+        </field>
+    </record>
+
     <record id="view_move_form_doi" model="ir.ui.view">
         <field name="name">account.move.doi.type.form</field>
         <field name="model">account.move</field>
@@ -8,13 +45,19 @@
             <xpath expr="//field[@name='l10n_it_edi_doi_id']" position="before">
                 <field name="doi_type" invisible="1" />
             </xpath>
+            <!-- Domain for DOI selection:
+                 - For sales (type='out'): filter by partner (customer-specific DOI)
+                 - For purchases (type='in'): no partner filter (any supplier can use it)
+            -->
             <xpath expr="//field[@name='l10n_it_edi_doi_id']" position="attributes">
                 <attribute name="domain">
                     [('state', '!=', 'draft'),
                     ('company_id', '=', company_id),
                     ('currency_id', '=', currency_id),
-                    ('partner_id', '=', commercial_partner_id),
-                    ('type', '=', doi_type)]
+                    ('type', '=', doi_type),
+                    '|',
+                        ('type', '=', 'in'),
+                        ('partner_id', '=', commercial_partner_id)]
                 </attribute>
             </xpath>
         </field>

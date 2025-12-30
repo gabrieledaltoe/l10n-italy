@@ -8,6 +8,10 @@
             <field name="company_id" position="after">
                 <field name="type" readonly="state != 'draft'" />
             </field>
+            <!-- Make partner_id optional for issued declarations (type='in') -->
+            <xpath expr="//field[@name='partner_id']" position="attributes">
+                <attribute name="required">type == 'out'</attribute>
+            </xpath>
         </field>
     </record>
 
